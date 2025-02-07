@@ -521,13 +521,13 @@
             Quyen: newQuyen // ✅ Gửi lên Firebase dưới dạng số nguyên
         }).then(() => {
             closePopup();
-
+            var quyenText = (newQuyen === 1) ? "Cho phép" : "Không cho phép";
             // ✅ Cập nhật ngay trên giao diện mà không cần reload
             document.querySelector(`#employee-table-body tr:nth-child(${userId}) td:nth-child(2)`).textContent = newName;
             document.querySelector(`#employee-table-body tr:nth-child(${userId}) td:nth-child(3)`).textContent = newChucVu || "Chưa cập nhật";
             document.querySelector(`#employee-table-body tr:nth-child(${userId}) td:nth-child(4)`).textContent = newSDT || "Chưa cập nhật";
             document.querySelector(`#employee-table-body tr:nth-child(${userId}) td:nth-child(5)`).textContent = newGioiTinh || "Chưa cập nhật";
-            document.querySelector(`#employee-table-body tr:nth-child(${userId}) td:nth-child(6)`).textContent = newQuyen;
+            document.querySelector(`#employee-table-body tr:nth-child(${userId}) td:nth-child(6)`).textContent = quyenText;
             
         }).catch(error => {
             console.error("Lỗi khi cập nhật dữ liệu:", error);
@@ -594,6 +594,7 @@
     var historyData = []; // Lưu trữ toàn bộ lịch sử
     var currentPage = 1; // Trang hiện tại
     var itemsPerPage = 10; // Số lượng bản ghi mỗi trang
+    var lastHistoryEntry = {}; // ✅ Lưu bản ghi cuối để kiểm tra trùng lặp
 
     document.addEventListener("DOMContentLoaded", function () {
         var historyRef = firebase.database().ref("History");
@@ -603,9 +604,19 @@
             var data = snapshot.val() || {}; // Nếu không có dữ liệu, tạo object rỗng
             console.log("🔥 Dữ liệu lịch sử:", data);
 
-            // Chuyển dữ liệu từ Object sang Array và sắp xếp theo thời gian mới nhất trước
-            historyData = Object.values(data).sort((a, b) => {
+            // Chuyển dữ liệu từ Object sang Array, sắp xếp theo thời gian mới nhất trước
+            var tempHistory = Object.values(data).sort((a, b) => {
                 return new Date(b.ThoiGian) - new Date(a.ThoiGian);
+            });
+
+            // ✅ Ngăn trùng lặp bằng cách kiểm tra dữ liệu trước khi thêm
+            historyData = tempHistory.filter(entry => {
+                var key = `${entry.ThoiGian}-${entry.NhanSu}-${entry.ChucVu}-${entry.TrangThaiCua}`;
+                if (lastHistoryEntry[key]) {
+                    return false; // Nếu đã tồn tại, không thêm
+                }
+                lastHistoryEntry[key] = true; // Đánh dấu đã lưu
+                return true;
             });
 
             renderTable(); // Gọi hàm hiển thị dữ liệu
@@ -653,7 +664,8 @@
 
 
 <script>
-    var isAlertTriggered = false; // ✅ Ngăn cảnh báo trùng lặp cho đến khi `Chuong` về 0
+    var isAlertTriggered = false; // ✅ Ngăn cảnh báo trùng lặp khi `Chuong = 1`
+    var lastNotification = ""; // ✅ Lưu nội dung cuối cùng để kiểm tra trùng lặp
 
     document.addEventListener("DOMContentLoaded", function () {
         var chuongRef = firebase.database().ref("Chuong");
@@ -675,17 +687,25 @@
 
                     kcRef.once("value", function (kcSnapshot) {
                         var kcValue = kcSnapshot.val();
+                        var message = "";
 
                         if (gasValue === 1) {
-                            saveNotification(thoiGian, "Phát hiện có khí gas!");
+                            message = "Phát hiện có khí gas!";
                         } else if (kcValue < 30) {
-                            saveNotification(thoiGian, `Phát hiện có người đến gần, khoảng cách: ${kcValue} cm`);
+                            message = `Phát hiện có người đến gần, khoảng cách: ${kcValue} cm`;
+                        }
+
+                        // ✅ Nếu có thông báo, kiểm tra xem đã tồn tại chưa
+                        if (message && message !== lastNotification) {
+                            lastNotification = message; // ✅ Lưu lại thông báo để tránh trùng
+                            saveNotification(thoiGian, message);
                         }
                     });
                 });
 
             } else if (chuongValue === 0) {
-                isAlertTriggered = false; // ✅ Khi `Chuong` về 0, reset cảnh báo để sẵn sàng lần tiếp theo
+                isAlertTriggered = false; // ✅ Reset khi `Chuong` về 0 để sẵn sàng lần tiếp theo
+                lastNotification = ""; // ✅ Xóa bộ nhớ để tránh lỗi không báo lại
             }
         });
 
@@ -695,12 +715,15 @@
             var tbody = document.getElementById("notification-table-body");
             tbody.innerHTML = ""; // Xóa dữ liệu cũ
 
-            // Chuyển object thành array và sắp xếp theo thời gian mới nhất
-            var notificationArray = Object.values(notifications).sort((a, b) => {
-                return new Date(b.ThoiGian) - new Date(a.ThoiGian);
-            });
+            // Chuyển object thành array, loại bỏ trùng lặp, sắp xếp theo thời gian mới nhất
+            var uniqueNotifications = Object.values(notifications).reduce((acc, cur) => {
+                if (!acc.find(n => n.NoiDung === cur.NoiDung && n.ThoiGian === cur.ThoiGian)) {
+                    acc.push(cur);
+                }
+                return acc;
+            }, []).sort((a, b) => new Date(b.ThoiGian) - new Date(a.ThoiGian));
 
-            notificationArray.forEach((entry, index) => {
+            uniqueNotifications.forEach((entry, index) => {
                 var row = document.createElement("tr");
                 row.innerHTML = `
                     <td>${index + 1}</td>
