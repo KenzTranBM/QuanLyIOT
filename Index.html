@@ -591,75 +591,84 @@
 </script>
 
 <script>
-    var historyData = []; // Lưu trữ toàn bộ lịch sử
-    var currentPage = 1; // Trang hiện tại
-    var itemsPerPage = 10; // Số lượng bản ghi mỗi trang
-    var lastHistoryEntry = {}; // ✅ Lưu bản ghi cuối để kiểm tra trùng lặp
+   var historyData = []; // Lưu trữ toàn bộ lịch sử
+var currentPage = 1; // Trang hiện tại
+var itemsPerPage = 10; // Số lượng bản ghi mỗi trang
 
-    document.addEventListener("DOMContentLoaded", function () {
-        var historyRef = firebase.database().ref("History");
+document.addEventListener("DOMContentLoaded", function () {
+    var historyRef = firebase.database().ref("History");
 
-        // Lắng nghe dữ liệu thay đổi trong Firebase
-        historyRef.on("value", function (snapshot) {
-            var data = snapshot.val() || {}; // Nếu không có dữ liệu, tạo object rỗng
-            console.log("🔥 Dữ liệu lịch sử:", data);
+    // Lắng nghe dữ liệu thay đổi trong Firebase
+    historyRef.on("value", function (snapshot) {
+        var data = snapshot.val() || {}; // Nếu không có dữ liệu, tạo object rỗng
+        console.log("🔥 Dữ liệu lịch sử:", data);
 
-            // Chuyển dữ liệu từ Object sang Array, sắp xếp theo thời gian mới nhất trước
-            var tempHistory = Object.values(data).sort((a, b) => {
-                return new Date(b.ThoiGian) - new Date(a.ThoiGian);
-            });
-
-            // ✅ Ngăn trùng lặp bằng cách kiểm tra dữ liệu trước khi thêm
-            historyData = tempHistory.filter(entry => {
-                var key = `${entry.ThoiGian}-${entry.NhanSu}-${entry.ChucVu}-${entry.TrangThaiCua}`;
-                if (lastHistoryEntry[key]) {
-                    return false; // Nếu đã tồn tại, không thêm
-                }
-                lastHistoryEntry[key] = true; // Đánh dấu đã lưu
-                return true;
-            });
-
-            renderTable(); // Gọi hàm hiển thị dữ liệu
-        }, function (error) {
-            console.error("❌ Lỗi khi đọc lịch sử từ Firebase:", error);
+        // Chuyển dữ liệu từ Object sang Array và sắp xếp theo thời gian mới nhất trước
+        let rawData = Object.values(data).sort((a, b) => {
+            return new Date(b.ThoiGian) - new Date(a.ThoiGian);
         });
+
+        // Lọc bỏ dữ liệu trùng lặp dựa trên ThoiGian
+        historyData = removeDuplicates(rawData, 'ThoiGian');
+
+        renderTable(); // Gọi hàm hiển thị dữ liệu
+    }, function (error) {
+        console.error("❌ Lỗi khi đọc lịch sử từ Firebase:", error);
+    });
+});
+
+// Hàm lọc dữ liệu trùng lặp theo một key nhất định
+function removeDuplicates(dataArray, key) {
+    let uniqueData = [];
+    let seenKeys = new Set();
+
+    dataArray.forEach(item => {
+        if (!seenKeys.has(item[key])) {
+            seenKeys.add(item[key]);
+            uniqueData.push(item);
+        }
+    });
+    return uniqueData;
+}
+
+function renderTable() {
+    var tbody = document.getElementById("history-table-body");
+    tbody.innerHTML = ""; // Xóa dữ liệu cũ trước khi cập nhật
+
+    // Xác định phạm vi dữ liệu cần hiển thị trên trang hiện tại
+    var startIndex = (currentPage - 1) * itemsPerPage;
+    var endIndex = startIndex + itemsPerPage;
+    var pageData = historyData.slice(startIndex, endIndex);
+
+    // Duyệt qua danh sách và hiển thị
+    pageData.forEach((entry, index) => {
+        var row = document.createElement("tr");
+        row.innerHTML = `
+            <td>${startIndex + index + 1}</td> <!-- STT -->
+            <td>${entry.ThoiGian}</td>
+            <td>${entry.NhanSu}</td>
+            <td>${entry.ChucVu}</td>
+            <td>${entry.TrangThaiCua}</td>
+        `;
+        tbody.appendChild(row);
     });
 
-    function renderTable() {
-        var tbody = document.getElementById("history-table-body");
-        tbody.innerHTML = ""; // Xóa dữ liệu cũ trước khi cập nhật
+    // Cập nhật số trang
+    document.getElementById("pageNumber").textContent = `Trang ${currentPage}`;
 
-        // Xác định phạm vi dữ liệu cần hiển thị trên trang hiện tại
-        var startIndex = (currentPage - 1) * itemsPerPage;
-        var endIndex = startIndex + itemsPerPage;
-        var pageData = historyData.slice(startIndex, endIndex);
+    // Kiểm tra xem có cần ẩn nút hay không
+    document.getElementById("prevPage").disabled = (currentPage === 1);
+    document.getElementById("nextPage").disabled = (endIndex >= historyData.length);
+}
 
-        // Duyệt qua danh sách và hiển thị
-        pageData.forEach((entry, index) => {
-            var row = document.createElement("tr");
-            row.innerHTML = `
-                <td>${startIndex + index + 1}</td> <!-- STT -->
-                <td>${entry.ThoiGian}</td>
-                <td>${entry.NhanSu}</td>
-                <td>${entry.ChucVu}</td>
-                <td>${entry.TrangThaiCua}</td>
-            `;
-            tbody.appendChild(row);
-        });
+function changePage(direction) {
+    currentPage += direction; // Thay đổi trang (1 = tiếp theo, -1 = trước đó)
+    renderTable(); // Cập nhật hiển thị
+}
 
-        // Cập nhật số trang
-        document.getElementById("pageNumber").textContent = `Trang ${currentPage}`;
-
-        // Kiểm tra xem có cần ẩn nút hay không
-        document.getElementById("prevPage").disabled = (currentPage === 1);
-        document.getElementById("nextPage").disabled = (endIndex >= historyData.length);
-    }
-
-    function changePage(direction) {
-        currentPage += direction; // Thay đổi trang (1 = tiếp theo, -1 = trước đó)
-        renderTable(); // Cập nhật hiển thị
-    }
 </script>
+
+
 
 
 
